@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Each user (including anonymous auth users) can only read/write their
+    // own profile and their own scan history — never another user's.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /scanHistory/{scanId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Saved assistant conversation. Subcollection matches are not inherited
+      // from the parent, so this rule is required for it to be readable at all.
+      match /assistantMessages/{messageId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}

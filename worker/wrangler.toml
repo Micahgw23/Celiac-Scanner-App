@@ -1,0 +1,23 @@
+name = "food-scanner-ai"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+[vars]
+# Public, non-secret config. The OpenRouter key is NOT here — set it with:
+#   npx wrangler secret put OPENROUTER_API_KEY
+FIREBASE_PROJECT_ID = "food-scanner-app-8132"
+MODEL = "moonshotai/kimi-k2.5"
+DAILY_LIMIT = "20"
+
+# Per-user daily quota storage. Created with:
+#   npx wrangler kv namespace create AI_QUOTA
+[[kv_namespaces]]
+binding = "AI_QUOTA"
+id = "1d9b2b9ebbb84845a8f7b35300ae4c7c"
+
+# Burst protection (per user, short window). Complements the daily quota above.
+[[unsafe.bindings]]
+name = "BURST_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 6, period = 60 }
