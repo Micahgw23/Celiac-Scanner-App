@@ -16,6 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { saveAssistantMessage, useAssistantHistory } from '@/hooks/useAssistantHistory';
+import { useTheme } from '@/hooks/use-theme';
 import { AiRateLimitError, ask, isAiConfigured } from '@/lib/aiClient';
 import { useAppState } from '@/lib/AppState';
 import type { AssistantChatMessage } from '@/types/ai';
@@ -27,6 +28,7 @@ const SUGGESTIONS = [
 ];
 
 export default function Assistant() {
+  const theme = useTheme();
   const { uid, profile } = useAppState();
   const { prefill } = useLocalSearchParams<{ prefill?: string }>();
   const { initialMessages } = useAssistantHistory(uid);
@@ -177,7 +179,8 @@ export default function Assistant() {
               value={input}
               onChangeText={setInput}
               placeholder="Ask about a food…"
-              style={styles.input}
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.input, { color: theme.text, backgroundColor: theme.backgroundElement }]}
               editable={!sending}
               onSubmitEditing={() => send(input)}
               returnKeyType="send"

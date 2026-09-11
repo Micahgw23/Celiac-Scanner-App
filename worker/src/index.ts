@@ -90,7 +90,13 @@ async function callOpenRouter(env: Env, messages: ChatMessage[]): Promise<Respon
       messages,
       tools: [LOOKUP_TOOL],
       temperature: 0.2,
-      max_tokens: 1200,
+      max_tokens: 1500,
+      // Some OpenRouter models (e.g. kimi-k2.5) default reasoning ON, and
+      // reasoning tokens are billed/counted as output tokens against the same
+      // max_tokens budget above -- without this, the model can burn the whole
+      // budget "thinking" and return an empty/truncated answer. This app has
+      // no use for a visible reasoning trace, so turn it off outright.
+      reasoning: { effort: 'none' },
       response_format: { type: 'json_object' },
     }),
   });

@@ -7,10 +7,12 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { DietSelector } from '@/components/DietSelector';
 import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { useAppState } from '@/lib/AppState';
 import type { DietId } from '@/types/diet';
 
 export default function Onboarding() {
+  const theme = useTheme();
   const { saveProfile } = useAppState();
   const [selected, setSelected] = useState<DietId[]>([]);
   const [customText, setCustomText] = useState('');
@@ -57,7 +59,8 @@ export default function Onboarding() {
               value={customText}
               onChangeText={setCustomText}
               placeholder="e.g. red dye 40, nightshades"
-              style={styles.input}
+              placeholderTextColor={theme.textSecondary}
+              style={[styles.input, { color: theme.text, backgroundColor: theme.background }]}
               multiline
             />
           </ThemedView>
