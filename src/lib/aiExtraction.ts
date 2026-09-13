@@ -1,4 +1,5 @@
 import { DIETARY_RULES } from '@/lib/dietaryRules';
+import { scanIngredientText } from '@/lib/ingredientKeywords';
 import { evaluateProduct } from '@/lib/rulesEngine';
 import type { DietId } from '@/types/diet';
 import type { ExtractedProduct } from '@/types/ai';
@@ -45,18 +46,25 @@ export function sanitizeTags(tags: string[] | null | undefined): string[] {
 /**
  * Maps the model's extraction onto the same OffProduct shape the barcode path
  * produces, so both paths converge on one verdict function.
+ *
+ * The model's tags are unioned with tags derived deterministically from the
+ * ingredient text (scanIngredientText), so a model that transcribes "wheat
+ * flour" but forgets to emit "en:gluten" still produces a gluten verdict. The
+ * union can only add tags — the scan never removes one the model reported.
  */
 export function toOffProduct(extracted: ExtractedProduct): OffProduct {
+  const ingredientsText = extracted.ingredientsText?.trim() || null;
+  const scanned = scanIngredientText(ingredientsText);
   return {
     code: extracted.barcode ?? undefined,
     product_name: extracted.productName,
     brands: extracted.brand,
     image_front_small_url: null,
-    allergens_tags: sanitizeTags(extracted.allergensTags),
-    traces_tags: sanitizeTags(extracted.tracesTags),
+    allergens_tags: sanitizeTags([...(extracted.allergensTags ?? []), ...scanned.allergenTags]),
+    traces_tags: sanitizeTags([...(extracted.tracesTags ?? []), ...scanned.traceTags]),
     labels_tags: [],
     ingredients_analysis_tags: [],
-    ingredients_text: extracted.ingredientsText,
+    ingredients_text: ingredientsText,
   };
 }
 
@@ -67,9 +75,11 @@ export function toOffProduct(extracted: ExtractedProduct): OffProduct {
  *  1. The verdict itself comes from `evaluateProduct` — never from the model.
  *     The model only supplies data; the deterministic engine judges it.
  *  2. A "safe" result derived from unverified model recall (rather than a real
- *     database lookup) is downgraded to "unknown". Nothing checked that the
- *     model listed every allergen, and a false "safe" is the one outcome a
- *     celiac user cannot afford. Unsafe/Caution are never downgraded.
+ *     database lookup or a label photo) is downgraded to "unknown". Nothing
+ *     checked that the model listed every allergen, and a false "safe" is the
+ *     one outcome a celiac user cannot afford. Unsafe/Caution are never
+ *     downgraded. A 'label-photo' result keeps "safe": the label itself is the
+ *     source, and its text was keyword-scanned in toOffProduct.
  */
 export function verdictForExtractedProduct(
   extracted: ExtractedProduct,

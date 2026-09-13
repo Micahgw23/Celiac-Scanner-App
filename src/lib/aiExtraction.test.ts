@@ -123,3 +123,60 @@ describe('verdictForExtractedProduct', () => {
     expect(verdictForExtractedProduct(milk, ['celiac', 'dairy-free']).status).toBe('unsafe');
   });
 });
+
+describe('label photos and the ingredient-text scan', () => {
+  it('regression: a label photo whose model tags omit en:gluten is still Not Safe when the text says wheat', () => {
+    const result = verdictForExtractedProduct(
+      extracted({
+        source: 'label-photo',
+        allergensTags: [],
+        tracesTags: [],
+        ingredientsText: 'Whole grain oats, sugar, wheat flour, salt.',
+      }),
+      ['celiac'],
+    );
+    expect(result.status).toBe('unsafe');
+    expect(result.triggeredTags).toContain('en:gluten');
+  });
+
+  it('turns a "may contain" sentence the model missed into Caution', () => {
+    const result = verdictForExtractedProduct(
+      extracted({ source: 'label-photo', ingredientsText: 'Rice, salt. May contain wheat.' }),
+      ['celiac'],
+    );
+    expect(result.status).toBe('caution');
+  });
+
+  it('keeps Safe for a clean label photo (the label is the source, so no downgrade)', () => {
+    const result = verdictForExtractedProduct(
+      extracted({ source: 'label-photo', ingredientsText: 'Rice, water, sea salt.' }),
+      ['celiac'],
+    );
+    expect(result.status).toBe('safe');
+  });
+
+  it('gives Unknown for a label photo with no readable text and no tags', () => {
+    for (const ingredientsText of [null, '', '   ']) {
+      const result = verdictForExtractedProduct(
+        extracted({ source: 'label-photo', ingredientsText }),
+        ['celiac'],
+      );
+      expect(result.status).toBe('unknown');
+    }
+  });
+
+  it('the scan can only add tags: it never loosens a Caution the model reported', () => {
+    const result = verdictForExtractedProduct(
+      extracted({ tracesTags: ['en:gluten'], ingredientsText: 'Rice, water, sea salt.' }),
+      ['celiac'],
+    );
+    expect(result.status).toBe('caution');
+  });
+
+  it('also applies to database lookups whose tags are incomplete', () => {
+    const product = toOffProduct(
+      extracted({ source: 'database', allergensTags: [], ingredientsText: 'Barley malt, rice.' }),
+    );
+    expect(product.allergens_tags).toContain('en:gluten');
+  });
+});

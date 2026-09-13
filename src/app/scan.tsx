@@ -76,6 +76,9 @@ export default function Scan() {
           <ThemedText type="default">Point the camera at a barcode</ThemedText>
         </ThemedView>
         <ThemedView style={styles.actionRow}>
+          <Pressable onPress={() => router.push('/label')} style={styles.overlayButton}>
+            <ThemedText type="linkPrimary">Scan label</ThemedText>
+          </Pressable>
           <Pressable onPress={() => router.push('/assistant')} style={styles.overlayButton}>
             <ThemedText type="linkPrimary">Ask about a food</ThemedText>
           </Pressable>
@@ -108,6 +111,7 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
     gap: Spacing.two,
     backgroundColor: 'transparent',

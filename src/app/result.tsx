@@ -118,8 +118,24 @@ export default function Result() {
           <ThemedView type="backgroundElement" style={styles.reasonBox}>
             <ThemedText type="default">{verdict.reason}</ThemedText>
           </ThemedView>
-          <Pressable onPress={() => router.replace('/scan')} style={styles.primaryButton}>
-            <ThemedText type="default" style={styles.primaryButtonText}>
+          {/* A barcode we can't verify is exactly when the label itself is
+              the better source — offer that instead of a dead end. */}
+          {verdict.status === 'unknown' ? (
+            <Pressable onPress={() => router.push('/label')} style={styles.primaryButton}>
+              <ThemedText type="default" style={styles.primaryButtonText}>
+                Scan the ingredient label instead
+              </ThemedText>
+            </Pressable>
+          ) : null}
+
+          <Pressable
+            onPress={() => router.replace('/scan')}
+            style={verdict.status === 'unknown' ? styles.secondaryButton : styles.primaryButton}
+          >
+            <ThemedText
+              type={verdict.status === 'unknown' ? 'linkPrimary' : 'default'}
+              style={verdict.status === 'unknown' ? undefined : styles.primaryButtonText}
+            >
               Scan Another
             </ThemedText>
           </Pressable>

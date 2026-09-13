@@ -1,10 +1,11 @@
 /**
  * Where a product's ingredient data came from. This matters for how much the
  * user should trust it: 'database' means the AI looked it up in Open Food Facts,
+ * 'label-photo' means the AI read it off a photo the user just took,
  * 'model-knowledge' means the AI answered from its own training and nothing
  * verified it — the UI must say so.
  */
-export type ExtractionSource = 'database' | 'model-knowledge';
+export type ExtractionSource = 'database' | 'label-photo' | 'model-knowledge';
 
 /**
  * One product the AI identified in its answer, as returned by the Worker.
@@ -25,10 +26,15 @@ export interface ExtractedProduct {
   barcode?: string | null;
 }
 
-/** Response body of the Worker's POST /ask. */
+/** Response body of the Worker's POST /ask and POST /label. */
 export interface AskResponse {
   answer: string;
   products: ExtractedProduct[];
+}
+
+/** Response body of the Worker's POST /transcribe. */
+export interface TranscribeResponse {
+  text: string;
 }
 
 export interface AssistantChatMessage {

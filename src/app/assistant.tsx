@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useRef, useState } from 'react';
+import * as Speech from 'expo-speech';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -17,8 +18,10 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { saveAssistantMessage, useAssistantHistory } from '@/hooks/useAssistantHistory';
 import { useTheme } from '@/hooks/use-theme';
+import { useVoiceInput } from '@/hooks/useVoiceInput';
 import { AiRateLimitError, ask, isAiConfigured } from '@/lib/aiClient';
 import { useAppState } from '@/lib/AppState';
+import { buildSpokenReply } from '@/lib/spokenReply';
 import type { AssistantChatMessage } from '@/types/ai';
 
 const SUGGESTIONS = [
@@ -38,10 +41,26 @@ export default function Assistant() {
   const [input, setInput] = useState(prefill ?? '');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [speakAnswers, setSpeakAnswers] = useState(true);
   const listRef = useRef<FlatList<AssistantChatMessage>>(null);
   const hydratedRef = useRef(false);
 
   const conditions = profile?.conditions ?? [];
+
+  // Voice questions are sent as soon as the recording is transcribed, so the
+  // transcript lands in the chat as the user's own bubble — if a word was
+  // misheard, it's visible right next to the answer it produced.
+  const voice = useVoiceInput({
+    onTranscript: (text) => send(text),
+    onError: (message) => setError(message),
+  });
+
+  // Never let speech outlive the screen.
+  useEffect(() => {
+    return () => {
+      Speech.stop();
+    };
+  }, []);
 
   // Adopt saved history once, and only if the user hasn't started typing into
   // a fresh conversation — never clobber an in-flight exchange.
@@ -74,6 +93,12 @@ export default function Assistant() {
         products: response.products,
       };
       setMessages([...nextMessages, assistantMessage]);
+
+      if (speakAnswers) {
+        // Speaks the deterministic verdict first, then the prose — so what you
+        // hear matches the badge even if the model's wording wanders.
+        Speech.speak(buildSpokenReply(response.answer, response.products, conditions));
+      }
 
       if (uid) {
         // Fire-and-forget: saved history is a convenience, not the main flow.
@@ -116,7 +141,17 @@ export default function Assistant() {
             <ThemedText type="linkPrimary">‹ Back</ThemedText>
           </Pressable>
           <ThemedText type="smallBold">Ask about a food</ThemedText>
-          <ThemedView style={styles.headerSpacer} />
+          <Pressable
+            onPress={() => {
+              if (speakAnswers) Speech.stop();
+              setSpeakAnswers(!speakAnswers);
+            }}
+            hitSlop={12}
+            style={styles.headerSpacer}
+            accessibilityLabel={speakAnswers ? 'Turn off spoken answers' : 'Turn on spoken answers'}
+          >
+            <ThemedText type="default">{speakAnswers ? '🔊' : '🔇'}</ThemedText>
+          </Pressable>
         </ThemedView>
 
         <KeyboardAvoidingView
@@ -157,11 +192,15 @@ export default function Assistant() {
             )}
           />
 
-          {sending ? (
+          {sending || voice.isBusy ? (
             <ThemedView style={styles.statusRow}>
               <ActivityIndicator />
               <ThemedText type="small" themeColor="textSecondary">
-                Checking…
+                {voice.state === 'listening'
+                  ? 'Listening… tap the mic when you’re done'
+                  : voice.state === 'transcribing'
+                    ? 'Transcribing…'
+                    : 'Checking…'}
               </ThemedText>
             </ThemedView>
           ) : null}
@@ -175,6 +214,22 @@ export default function Assistant() {
           ) : null}
 
           <ThemedView style={styles.inputRow}>
+            <Pressable
+              onPress={() => {
+                Speech.stop();
+                setError(null);
+                voice.toggle();
+              }}
+              disabled={sending || voice.state === 'transcribing'}
+              style={[
+                styles.micButton,
+                voice.state === 'listening' && styles.micButtonActive,
+                (sending || voice.state === 'transcribing') && styles.sendButtonDisabled,
+              ]}
+              accessibilityLabel={voice.state === 'listening' ? 'Stop recording' : 'Ask by voice'}
+            >
+              <ThemedText type="default">{voice.state === 'listening' ? '■' : '🎤'}</ThemedText>
+            </Pressable>
             <TextInput
               value={input}
               onChangeText={setInput}
@@ -278,4 +333,14 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: { opacity: 0.5 },
   sendButtonText: { color: '#FFFFFF' },
+  micButton: {
+    width: 44,
+    height: 44,
+    borderRadius: Spacing.three,
+    borderWidth: 1,
+    borderColor: '#B0B4BA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  micButtonActive: { backgroundColor: '#D93025', borderColor: '#D93025' },
 });

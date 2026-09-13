@@ -43,6 +43,12 @@ export function AiProductVerdict({ product, conditions }: AiProductVerdictProps)
           ⚠︎ Not verified against a product database — always check the physical label.
         </ThemedText>
       ) : null}
+
+      {product.source === 'label-photo' ? (
+        <ThemedText type="small" themeColor="textSecondary" style={styles.caveat}>
+          ⚠︎ Read from your photo by AI. Compare it against the package before eating.
+        </ThemedText>
+      ) : null}
     </ThemedView>
   );
 }

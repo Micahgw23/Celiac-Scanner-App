@@ -14,6 +14,7 @@ export default function RootLayout() {
           <Stack.Screen name="onboarding" />
           <Stack.Screen name="scan" />
           <Stack.Screen name="result" />
+          <Stack.Screen name="label" />
           <Stack.Screen name="assistant" />
           <Stack.Screen name="history" options={{ headerShown: true, title: 'Scan History' }} />
         </Stack>

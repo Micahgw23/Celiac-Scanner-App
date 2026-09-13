@@ -36,8 +36,14 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Food Scanner uses the camera to scan a product's barcode so it can check the ingredients against your dietary profile.",
+          "cameraPermission": "Food Scanner uses the camera to scan a product's barcode and to photograph ingredient labels, so it can check them against your dietary profile.",
           "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Food Scanner uses the microphone so you can ask the assistant about a food out loud."
         }
       ]
     ],

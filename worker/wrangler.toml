@@ -7,13 +7,20 @@ compatibility_date = "2026-08-01"
 #   npx wrangler secret put OPENROUTER_API_KEY
 FIREBASE_PROJECT_ID = "food-scanner-app-8132"
 MODEL = "moonshotai/kimi-k2.5"
-DAILY_LIMIT = "20"
+DAILY_LIMIT = "20"               # /ask + /label (OpenRouter spend), per user per day
+TRANSCRIBE_DAILY_LIMIT = "40"    # /transcribe (free Whisper budget), per user per day
 
 # Per-user daily quota storage. Created with:
 #   npx wrangler kv namespace create AI_QUOTA
 [[kv_namespaces]]
 binding = "AI_QUOTA"
 id = "1d9b2b9ebbb84845a8f7b35300ae4c7c"
+
+# Workers AI, used for speech-to-text (Whisper). Free plan: 10,000 neurons/day,
+# shared by all users (~200 audio-minutes/day). /transcribe fails closed with a
+# friendly 503 once it runs out.
+[ai]
+binding = "AI"
 
 # Burst protection (per user, short window). Complements the daily quota above.
 [[unsafe.bindings]]
