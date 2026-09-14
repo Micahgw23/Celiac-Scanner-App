@@ -2,15 +2,18 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { SaveFormat, manipulateAsync } from 'expo-image-manipulator';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { Button } from '@/components/ui/Button';
+import { CameraOverlay, OverlayButton } from '@/components/ui/CameraOverlay';
+import { Card } from '@/components/ui/Card';
+import { ErrorNotice } from '@/components/ui/ErrorNotice';
+import { Screen } from '@/components/ui/Screen';
 import { VerdictBadge } from '@/components/VerdictBadge';
-import { Spacing } from '@/constants/theme';
-import { verdictForExtractedProduct } from '@/lib/aiExtraction';
+import { Radius, Spacing } from '@/constants/theme';
 import { isAiConfigured, readLabel } from '@/lib/aiClient';
+import { verdictForExtractedProduct } from '@/lib/aiExtraction';
 import { useAppState } from '@/lib/AppState';
 import type { ExtractedProduct } from '@/types/ai';
 import type { DietId } from '@/types/diet';
@@ -75,129 +78,124 @@ export default function Label() {
 
   if (!isAiConfigured()) {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.centered}>
-          <ThemedText type="title" style={styles.bigTitle}>
-            Label reading not set up
-          </ThemedText>
-          <ThemedText type="default" themeColor="textSecondary" style={styles.centeredText}>
-            Deploy the worker in worker/ and add its URL as EXPO_PUBLIC_AI_PROXY_URL in .env.
-          </ThemedText>
-          <Pressable onPress={() => router.back()} style={styles.secondaryButton}>
-            <ThemedText type="linkPrimary">Go back</ThemedText>
-          </Pressable>
-        </SafeAreaView>
-      </ThemedView>
+      <Screen centered>
+        <ThemedText type="title" style={styles.centered}>
+          Label reading isn&apos;t available
+        </ThemedText>
+        <ThemedText type="default" themeColor="textSecondary" style={styles.centered}>
+          This feature needs the app&apos;s AI service, which isn&apos;t switched on yet. You can
+          still scan barcodes in the meantime.
+        </ThemedText>
+        <Button label="Go back" variant="ghost" onPress={() => router.back()} />
+      </Screen>
     );
   }
 
-  if (!permission) return <ThemedView style={styles.container} />;
+  if (!permission) {
+    return (
+      <Screen centered>
+        <ActivityIndicator size="large" />
+      </Screen>
+    );
+  }
 
   if (!permission.granted) {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.centered}>
-          <ThemedText type="title" style={styles.bigTitle}>
-            Camera access needed
-          </ThemedText>
-          <ThemedText type="default" themeColor="textSecondary" style={styles.centeredText}>
-            We use the camera to photograph the ingredient list. The photo is sent to be read and
-            is not stored.
-          </ThemedText>
-          {permission.canAskAgain ? (
-            <Pressable onPress={requestPermission} style={styles.primaryButton}>
-              <ThemedText type="default" style={styles.primaryButtonText}>
-                Grant camera access
-              </ThemedText>
-            </Pressable>
-          ) : (
-            <Pressable onPress={() => Linking.openSettings()} style={styles.primaryButton}>
-              <ThemedText type="default" style={styles.primaryButtonText}>
-                Open Settings
-              </ThemedText>
-            </Pressable>
-          )}
-        </SafeAreaView>
-      </ThemedView>
+      <Screen centered>
+        <ThemedText type="title" style={styles.centered}>
+          Camera access needed
+        </ThemedText>
+        <ThemedText type="default" themeColor="textSecondary" style={styles.centered}>
+          We use the camera to photograph the ingredient list. The photo is sent to be read and is
+          not stored.
+        </ThemedText>
+        {permission.canAskAgain ? (
+          <Button label="Grant camera access" onPress={requestPermission} fullWidth={false} />
+        ) : (
+          <Button label="Open Settings" onPress={() => Linking.openSettings()} fullWidth={false} />
+        )}
+      </Screen>
     );
   }
 
   if (phase.kind === 'result' || phase.kind === 'error') {
+    const readable = phase.kind === 'result' && phase.product;
+
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <ScrollView contentContainerStyle={styles.scrollContent}>
-            {phase.kind === 'result' && phase.product ? (
-              <LabelResult product={phase.product} answer={phase.answer} conditions={conditions} />
-            ) : (
-              <ThemedView type="backgroundElement" style={styles.reasonBox}>
-                <ThemedText type="default">
-                  {phase.kind === 'error' ? phase.message : phase.answer}
-                </ThemedText>
-              </ThemedView>
-            )}
+      <Screen scroll>
+        {readable ? (
+          <LabelResult product={phase.product!} answer={phase.answer} conditions={conditions} />
+        ) : (
+          // A failure must not look like a result — this gets danger styling,
+          // where it previously shared the same neutral box as real content.
+          <ErrorNotice
+            message={phase.kind === 'error' ? phase.message : phase.answer}
+            onRetry={() => setPhase({ kind: 'camera' })}
+            retryLabel="Retake photo"
+          />
+        )}
 
-            <Pressable onPress={() => setPhase({ kind: 'camera' })} style={styles.primaryButton}>
-              <ThemedText type="default" style={styles.primaryButtonText}>
-                {phase.kind === 'result' && phase.product ? 'Scan another label' : 'Retake photo'}
-              </ThemedText>
-            </Pressable>
+        {readable ? (
+          <>
+            <Button label="Scan another label" onPress={() => setPhase({ kind: 'camera' })} />
+            <Button
+              label="Ask the assistant about this"
+              variant="ghost"
+              onPress={() =>
+                router.push({
+                  pathname: '/assistant',
+                  params: {
+                    prefill: phase.product?.productName
+                      ? `Tell me more about ${phase.product.productName}`
+                      : 'I just scanned an ingredient label — what should I watch out for?',
+                  },
+                })
+              }
+            />
+          </>
+        ) : null}
 
-            {phase.kind === 'result' && phase.product ? (
-              <Pressable
-                onPress={() =>
-                  router.push({
-                    pathname: '/assistant',
-                    params: {
-                      prefill: phase.product?.productName
-                        ? `Tell me more about ${phase.product.productName}`
-                        : 'I just scanned an ingredient label — what should I watch out for?',
-                    },
-                  })
-                }
-                style={styles.secondaryButton}
-              >
-                <ThemedText type="linkPrimary">Ask the assistant about this</ThemedText>
-              </Pressable>
-            ) : null}
-
-            <Pressable onPress={() => router.back()} style={styles.secondaryButton}>
-              <ThemedText type="linkPrimary">Back to scanner</ThemedText>
-            </Pressable>
-          </ScrollView>
-        </SafeAreaView>
-      </ThemedView>
+        <Button label="Back to scanner" variant="ghost" onPress={() => router.back()} />
+      </Screen>
     );
   }
 
   const busy = phase.kind === 'working';
 
   return (
-    <ThemedView style={styles.container}>
+    <Screen padded={false} edges={[]}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back" />
-      <SafeAreaView style={styles.overlay} pointerEvents="box-none">
-        <ThemedView type="backgroundElement" style={styles.hintBar}>
-          <ThemedText type="default">
-            {busy
-              ? phase.step === 'capturing'
-                ? 'Taking photo…'
-                : 'Reading the label…'
-              : 'Fill the frame with the ingredient list'}
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedView style={styles.controls}>
-          {busy ? (
-            <ActivityIndicator size="large" color="#FFFFFF" />
-          ) : (
-            <Pressable onPress={capture} style={styles.shutter} accessibilityLabel="Take photo" />
-          )}
-          <Pressable onPress={() => router.back()} style={styles.overlayButton} disabled={busy}>
-            <ThemedText type="linkPrimary">Cancel</ThemedText>
+      <CameraOverlay
+        hint={
+          busy
+            ? phase.step === 'capturing'
+              ? 'Taking photo…'
+              : 'Reading the label…'
+            : 'Fill the frame with the ingredient list'
+        }
+        showReticle={!busy}
+      >
+        <View style={styles.controls}>
+          {/* The shutter keeps its footprint while busy, so the layout doesn't
+              jump between tapping and the result arriving. */}
+          <Pressable
+            onPress={capture}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel="Take photo of the ingredient label"
+            accessibilityState={{ disabled: busy, busy }}
+            style={({ pressed }) => [
+              styles.shutter,
+              busy && styles.shutterBusy,
+              pressed && !busy && styles.shutterPressed,
+            ]}
+          >
+            {busy ? <ActivityIndicator color="#FFFFFF" /> : null}
           </Pressable>
-        </ThemedView>
-      </SafeAreaView>
-    </ThemedView>
+          <OverlayButton label="Cancel" onPress={() => router.back()} disabled={busy} />
+        </View>
+      </CameraOverlay>
+    </Screen>
   );
 }
 
@@ -222,19 +220,18 @@ function LabelResult({
       <VerdictBadge status={verdict.status} />
 
       {product.productName ? (
-        <ThemedText type="subtitle" style={styles.productName}>
+        <ThemedText type="subtitle">
           {product.productName}
           {product.brand ? ` — ${product.brand}` : ''}
         </ThemedText>
       ) : null}
 
-      <ThemedView type="backgroundElement" style={styles.reasonBox}>
+      <Card>
         <ThemedText type="default">{verdict.reason}</ThemedText>
-      </ThemedView>
-
-      <ThemedText type="small" themeColor="textSecondary" style={styles.caveat}>
-        ⚠︎ Read from your photo by AI. Compare it against the package before eating.
-      </ThemedText>
+        <ThemedText type="caption" themeColor="textSecondary" style={styles.caveat}>
+          ⚠︎ Read from your photo by AI. Compare it against the package before eating.
+        </ThemedText>
+      </Card>
 
       {answer ? (
         <ThemedText type="default" themeColor="textSecondary">
@@ -243,71 +240,32 @@ function LabelResult({
       ) : null}
 
       {product.ingredientsText ? (
-        <ThemedView type="backgroundElement" style={styles.reasonBox}>
+        <Card>
           <ThemedText type="smallBold">What we read</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             {product.ingredientsText}
           </ThemedText>
-        </ThemedView>
+        </Card>
       ) : null}
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: { flex: 1 },
   camera: { flex: 1 },
-  scrollContent: { padding: Spacing.four, gap: Spacing.three },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'space-between',
-    padding: Spacing.three,
-  },
-  hintBar: {
-    alignSelf: 'center',
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.four,
-  },
-  controls: { alignItems: 'center', gap: Spacing.three, backgroundColor: 'transparent' },
+  centered: { textAlign: 'center' },
+  caveat: { fontStyle: 'italic' },
+  controls: { alignItems: 'center', gap: Spacing.three },
   shutter: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 76,
+    height: 76,
+    borderRadius: Radius.pill,
     backgroundColor: '#FFFFFF',
     borderWidth: 4,
-    borderColor: '#00000055',
-  },
-  overlayButton: {
-    backgroundColor: '#00000099',
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.four,
-  },
-  centered: {
-    flex: 1,
+    borderColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.three,
-    paddingHorizontal: Spacing.four,
   },
-  centeredText: { textAlign: 'center' },
-  bigTitle: { fontSize: 24, textAlign: 'center' },
-  productName: { fontSize: 20 },
-  reasonBox: { borderRadius: Spacing.three, padding: Spacing.three, gap: Spacing.two },
-  caveat: { fontStyle: 'italic' },
-  primaryButton: {
-    backgroundColor: '#208AEF',
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.five,
-    alignItems: 'center',
-  },
-  primaryButtonText: { color: '#FFFFFF' },
-  secondaryButton: { alignItems: 'center', paddingVertical: Spacing.two },
+  shutterBusy: { backgroundColor: 'rgba(0,0,0,0.55)', borderColor: 'rgba(255,255,255,0.5)' },
+  shutterPressed: { opacity: 0.75 },
 });

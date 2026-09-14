@@ -1,7 +1,9 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Icon } from '@/components/ui/Icon';
+import { Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { ALL_DIETARY_RULES } from '@/lib/dietaryRules';
 import type { DietId } from '@/types/diet';
 
@@ -10,8 +12,16 @@ interface DietSelectorProps {
   onChange: (next: DietId[]) => void;
 }
 
-/** Checkbox-style list of every diet the rules engine knows about. */
+/**
+ * Checkbox-style list of every diet the rules engine knows about.
+ *
+ * All colors come from the theme. These were previously hardcoded light-mode
+ * values, so in dark mode a selected row rendered white text on a near-white
+ * bar and unchecked boxes were nearly invisible.
+ */
 export function DietSelector({ selected, onChange }: DietSelectorProps) {
+  const theme = useTheme();
+
   function toggle(id: DietId) {
     onChange(selected.includes(id) ? selected.filter((d) => d !== id) : [...selected, id]);
   }
@@ -24,14 +34,27 @@ export function DietSelector({ selected, onChange }: DietSelectorProps) {
           <Pressable
             key={rule.id}
             onPress={() => toggle(rule.id)}
-            style={[styles.row, isSelected && styles.rowSelected]}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: isSelected }}
+            style={({ pressed }) => [
+              styles.row,
+              { backgroundColor: theme.background },
+              isSelected && { backgroundColor: theme.backgroundSelected },
+              pressed && { backgroundColor: theme.backgroundElement },
+            ]}
           >
-            <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-              {isSelected ? <ThemedText style={styles.checkmark}>✓</ThemedText> : null}
+            <View
+              style={[
+                styles.checkbox,
+                { borderColor: theme.border },
+                isSelected && { backgroundColor: theme.primary, borderColor: theme.primary },
+              ]}
+            >
+              {isSelected ? <Icon name="checkmark" fallback="✓" size={14} color={theme.onPrimary} /> : null}
             </View>
-            <ThemedText type="default">{rule.label}</ThemedText>
+            <ThemedText type="default" style={styles.label}>
+              {rule.label}
+            </ThemedText>
           </Pressable>
         );
       })}
@@ -50,26 +73,16 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingVertical: Spacing.three,
     paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.two,
-  },
-  rowSelected: {
-    backgroundColor: '#E0E1E6',
+    borderRadius: Radius.md,
+    minHeight: 56,
   },
   checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: Spacing.one,
+    width: 26,
+    height: 26,
+    borderRadius: Radius.sm,
     borderWidth: 2,
-    borderColor: '#60646C',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkboxSelected: {
-    backgroundColor: '#208AEF',
-    borderColor: '#208AEF',
-  },
-  checkmark: {
-    color: '#FFFFFF',
-    fontSize: 14,
-  },
+  label: { flex: 1 },
 });

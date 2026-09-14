@@ -1,10 +1,9 @@
 import { Redirect } from 'expo-router';
-import { ActivityIndicator, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { Screen } from '@/components/ui/Screen';
 import { useAppState } from '@/lib/AppState';
 
 /**
@@ -16,24 +15,28 @@ export default function Index() {
 
   if (error) {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <ThemedText type="title" style={styles.errorTitle}>
-            Setup needed
-          </ThemedText>
-          <ThemedText type="default">{error}</ThemedText>
-        </SafeAreaView>
-      </ThemedView>
+      <Screen centered>
+        <ThemedText type="title" style={styles.centered}>
+          Can&apos;t start up
+        </ThemedText>
+        <ThemedText type="default" themeColor="textSecondary" style={styles.centered}>
+          Food Scanner couldn&apos;t reach its account service. Check your internet connection, then
+          reopen the app.
+        </ThemedText>
+        {/* Technical detail kept, but de-emphasized — it's for debugging, not the user. */}
+        <ThemedText type="caption" themeColor="textSecondary" style={styles.centered}>
+          {error}
+        </ThemedText>
+      </Screen>
     );
   }
 
   if (loading) {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
-          <ActivityIndicator size="large" />
-        </SafeAreaView>
-      </ThemedView>
+      <Screen centered>
+        <ThemedText type="title">Food Scanner</ThemedText>
+        <LoadingState label="Getting things ready…" />
+      </Screen>
     );
   }
 
@@ -41,13 +44,5 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.three,
-    paddingHorizontal: Spacing.four,
-  },
-  errorTitle: { fontSize: 24, textAlign: 'center' },
+  centered: { textAlign: 'center' },
 });

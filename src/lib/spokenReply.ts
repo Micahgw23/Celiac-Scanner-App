@@ -22,6 +22,18 @@ function forSpeech(text: string): string {
 }
 
 /**
+ * Just the opening sentence.
+ *
+ * Spoken answers are for a hand holding a box in a store aisle — the full
+ * reply can run 20+ seconds, and it stays on screen to read.
+ */
+function firstSentence(text: string): string {
+  const cleaned = forSpeech(text);
+  const match = cleaned.match(/^.*?[.!?](?=\s|$)/);
+  return (match ? match[0] : cleaned).trim();
+}
+
+/**
  * Builds what the assistant says out loud.
  *
  * The verdict is spoken FIRST, and it's the same deterministic verdict the
@@ -40,5 +52,5 @@ export function buildSpokenReply(
     return `${name}: ${SPOKEN_STATUS[status]}.`;
   });
 
-  return [...verdicts, forSpeech(answer)].filter(Boolean).join(' ').trim();
+  return [...verdicts, firstSentence(answer)].filter(Boolean).join(' ').trim();
 }

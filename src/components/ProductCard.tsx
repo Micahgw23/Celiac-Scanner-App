@@ -2,7 +2,9 @@ import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Icon } from '@/components/ui/Icon';
+import { Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 interface ProductCardProps {
   name: string | null;
@@ -11,12 +13,22 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ name, brand, imageUrl }: ProductCardProps) {
+  const theme = useTheme();
+
   return (
     <View style={styles.row}>
       {imageUrl ? (
         <Image source={{ uri: imageUrl }} style={styles.image} contentFit="contain" />
       ) : (
-        <View style={styles.imagePlaceholder} />
+        // Themed: this was a fixed light gray, which glowed on black in dark mode.
+        <View
+          style={[
+            styles.imagePlaceholder,
+            { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+          ]}
+        >
+          <Icon name="photo" fallback="🖼" size={22} color={theme.textSecondary} />
+        </View>
       )}
       <View style={styles.textColumn}>
         <ThemedText type="subtitle" numberOfLines={2}>
@@ -42,13 +54,15 @@ const styles = StyleSheet.create({
   image: {
     width: 72,
     height: 72,
-    borderRadius: Spacing.two,
+    borderRadius: Radius.md,
   },
   imagePlaceholder: {
     width: 72,
     height: 72,
-    borderRadius: Spacing.two,
-    backgroundColor: '#E0E1E6',
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   textColumn: {
     flex: 1,

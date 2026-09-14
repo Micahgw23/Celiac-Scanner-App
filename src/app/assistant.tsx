@@ -1,4 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import * as Speech from 'expo-speech';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -9,26 +10,32 @@ import {
   Pressable,
   StyleSheet,
   TextInput,
+  View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AiProductVerdict } from '@/components/AiProductVerdict';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Card } from '@/components/ui/Card';
+import { ErrorNotice } from '@/components/ui/ErrorNotice';
+import { Icon } from '@/components/ui/Icon';
+import { Screen } from '@/components/ui/Screen';
+import { Radius, Spacing } from '@/constants/theme';
 import { saveAssistantMessage, useAssistantHistory } from '@/hooks/useAssistantHistory';
 import { useTheme } from '@/hooks/use-theme';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
 import { AiRateLimitError, ask, isAiConfigured } from '@/lib/aiClient';
 import { useAppState } from '@/lib/AppState';
 import { buildSpokenReply } from '@/lib/spokenReply';
+import { SPEECH_OPTIONS, hasHighQualityVoice, pickBestVoice } from '@/lib/speechVoice';
 import type { AssistantChatMessage } from '@/types/ai';
 
 const SUGGESTIONS = [
   'Is Cheerios gluten free?',
   'Can I eat Fage yogurt?',
-  'What does "modified food starch" mean for celiacs?',
+  'What does "modified food starch" mean?',
 ];
+
+const VOICE_TIP_KEY = 'voiceQualityTipDismissed';
 
 export default function Assistant() {
   const theme = useTheme();
@@ -42,6 +49,8 @@ export default function Assistant() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [speakAnswers, setSpeakAnswers] = useState(true);
+  const [voiceId, setVoiceId] = useState<string | undefined>(undefined);
+  const [showVoiceTip, setShowVoiceTip] = useState(false);
   const listRef = useRef<FlatList<AssistantChatMessage>>(null);
   const hydratedRef = useRef(false);
 
@@ -55,10 +64,25 @@ export default function Assistant() {
     onError: (message) => setError(message),
   });
 
-  // Never let speech outlive the screen.
+  // Pick the best installed voice once. iOS ships only compact voices by
+  // default, so if nothing better is installed we offer the Settings tip.
   useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const voices = await Speech.getAvailableVoicesAsync().catch(() => []);
+      if (!active) return;
+      setVoiceId(pickBestVoice(voices));
+
+      if (!hasHighQualityVoice(voices)) {
+        const dismissed = await AsyncStorage.getItem(VOICE_TIP_KEY).catch(() => null);
+        if (active && !dismissed) setShowVoiceTip(true);
+      }
+    })();
+
     return () => {
-      Speech.stop();
+      active = false;
+      Speech.stop(); // never let speech outlive the screen
     };
   }, []);
 
@@ -71,6 +95,11 @@ export default function Assistant() {
     hydratedRef.current = true;
     setMessages((current) => (current.length === 0 ? initialMessages : current));
   }, [initialMessages]);
+
+  async function dismissVoiceTip() {
+    setShowVoiceTip(false);
+    await AsyncStorage.setItem(VOICE_TIP_KEY, '1').catch(() => {});
+  }
 
   async function send(text: string) {
     const question = text.trim();
@@ -98,9 +127,12 @@ export default function Assistant() {
       setMessages([...nextMessages, assistantMessage]);
 
       if (speakAnswers) {
-        // Speaks the deterministic verdict first, then the prose — so what you
-        // hear matches the badge even if the model's wording wanders.
-        Speech.speak(buildSpokenReply(response.answer, response.products, conditions));
+        // Speaks the deterministic verdict first, then one sentence — so what
+        // you hear matches the badge even if the model's wording wanders.
+        Speech.speak(buildSpokenReply(response.answer, response.products, conditions), {
+          ...SPEECH_OPTIONS,
+          voice: voiceId,
+        });
       }
 
       if (uid) {
@@ -122,185 +154,215 @@ export default function Assistant() {
 
   if (!isAiConfigured()) {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.centered}>
-          <ThemedText type="title" style={styles.setupTitle}>
-            Assistant not set up
-          </ThemedText>
-          <ThemedText type="default" themeColor="textSecondary" style={styles.centeredText}>
-            Deploy the worker in worker/ and add its URL as EXPO_PUBLIC_AI_PROXY_URL in .env. See
-            worker/README.md.
-          </ThemedText>
-        </SafeAreaView>
-      </ThemedView>
+      <Screen centered>
+        <ThemedText type="title" style={styles.centeredText}>
+          Assistant isn&apos;t available
+        </ThemedText>
+        <ThemedText type="default" themeColor="textSecondary" style={styles.centeredText}>
+          The app&apos;s AI service isn&apos;t switched on yet. You can still scan barcodes in the
+          meantime.
+        </ThemedText>
+      </Screen>
     );
   }
 
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <ThemedView style={styles.header}>
-          <Pressable onPress={() => router.back()} hitSlop={12}>
-            <ThemedText type="linkPrimary">‹ Back</ThemedText>
-          </Pressable>
-          <ThemedText type="smallBold">Ask about a food</ThemedText>
-          <Pressable
-            onPress={() => {
-              if (speakAnswers) Speech.stop();
-              setSpeakAnswers(!speakAnswers);
-            }}
-            hitSlop={12}
-            style={styles.headerSpacer}
-            accessibilityLabel={speakAnswers ? 'Turn off spoken answers' : 'Turn on spoken answers'}
-          >
-            <ThemedText type="default">{speakAnswers ? '🔊' : '🔇'}</ThemedText>
-          </Pressable>
-        </ThemedView>
+    <Screen padded={false} edges={['bottom']}>
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Pressable
+              onPress={() => {
+                if (speakAnswers) Speech.stop();
+                setSpeakAnswers(!speakAnswers);
+              }}
+              hitSlop={12}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: speakAnswers }}
+              accessibilityLabel={speakAnswers ? 'Turn off spoken answers' : 'Turn on spoken answers'}
+            >
+              <Icon
+                name={speakAnswers ? 'speaker.wave.2.fill' : 'speaker.slash.fill'}
+                fallback={speakAnswers ? '🔊' : '🔇'}
+                size={20}
+                color={theme.primary}
+              />
+            </Pressable>
+          ),
+        }}
+      />
 
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
-        >
-          <FlatList
-            ref={listRef}
-            data={messages}
-            keyExtractor={(_, index) => String(index)}
-            contentContainerStyle={styles.listContent}
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-            ListEmptyComponent={
-              <ThemedView style={styles.empty}>
-                <ThemedText type="default" themeColor="textSecondary" style={styles.centeredText}>
-                  Ask about any food or brand. Answers are checked against a product database where
-                  possible, and safety verdicts use your saved diet.
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 96 : 0}
+      >
+        <FlatList
+          ref={listRef}
+          data={messages}
+          keyExtractor={(_, index) => String(index)}
+          contentContainerStyle={styles.listContent}
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+          ListHeaderComponent={
+            showVoiceTip ? (
+              <Card style={styles.tip}>
+                <ThemedText type="smallBold">Want a more natural voice?</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  iPhone ships with a basic robotic voice. For a much better one, go to Settings →
+                  Accessibility → Spoken Content → Voices → English and download an
+                  &quot;Enhanced&quot; voice. Also note: spoken answers stay silent while your phone
+                  is on silent.
                 </ThemedText>
+                <Pressable onPress={dismissVoiceTip} hitSlop={8} style={styles.tipDismiss}>
+                  <ThemedText type="linkPrimary">Got it</ThemedText>
+                </Pressable>
+              </Card>
+            ) : null
+          }
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <ThemedText type="default" themeColor="textSecondary" style={styles.centeredText}>
+                Ask about any food or brand. Answers are checked against a product database where
+                possible, and safety verdicts use your saved diet.
+              </ThemedText>
+              <View style={styles.chipWrap}>
                 {SUGGESTIONS.map((s) => (
-                  <Pressable key={s} onPress={() => send(s)} style={styles.suggestion}>
+                  <Pressable
+                    key={s}
+                    onPress={() => send(s)}
+                    style={({ pressed }) => [
+                      styles.chip,
+                      { borderColor: theme.border, backgroundColor: theme.backgroundElement },
+                      pressed && { backgroundColor: theme.backgroundSelected },
+                    ]}
+                  >
                     <ThemedText type="small">{s}</ThemedText>
                   </Pressable>
                 ))}
-              </ThemedView>
-            }
-            renderItem={({ item }) => (
-              <ThemedView
-                style={[styles.bubble, item.role === 'user' ? styles.userBubble : styles.aiBubble]}
-              >
-                <ThemedText type="default" style={item.role === 'user' ? styles.userText : undefined}>
+              </View>
+            </View>
+          }
+          renderItem={({ item }) =>
+            item.role === 'user' ? (
+              <View style={[styles.bubble, styles.userBubble, { backgroundColor: theme.primary }]}>
+                <ThemedText type="default" style={{ color: theme.onPrimary }}>
                   {item.content}
                 </ThemedText>
+              </View>
+            ) : (
+              // AI replies now get a real surface; they previously rendered on
+              // bare background opposite solid blue user bubbles.
+              <Card style={styles.aiBubble}>
+                <ThemedText type="default">{item.content}</ThemedText>
                 {item.products?.map((product, i) => (
                   <AiProductVerdict key={i} product={product} conditions={conditions} />
                 ))}
-              </ThemedView>
-            )}
+              </Card>
+            )
+          }
+        />
+
+        {sending || voice.isBusy ? (
+          <View style={styles.statusRow}>
+            <ActivityIndicator color={theme.text} />
+            <ThemedText type="small" themeColor="textSecondary">
+              {voice.state === 'listening'
+                ? 'Listening… tap the square when you’re done'
+                : voice.state === 'transcribing'
+                  ? 'Transcribing…'
+                  : 'Checking…'}
+            </ThemedText>
+          </View>
+        ) : null}
+
+        {error ? (
+          <View style={styles.errorWrap}>
+            <ErrorNotice message={error} />
+          </View>
+        ) : null}
+
+        <View style={[styles.inputRow, { borderTopColor: theme.border }]}>
+          <Pressable
+            onPress={() => {
+              Speech.stop();
+              setError(null);
+              voice.toggle();
+            }}
+            disabled={sending || voice.state === 'transcribing'}
+            accessibilityRole="button"
+            accessibilityLabel={voice.state === 'listening' ? 'Stop recording' : 'Ask by voice'}
+            style={({ pressed }) => [
+              styles.micButton,
+              { borderColor: theme.border },
+              voice.state === 'listening' && { backgroundColor: theme.danger, borderColor: theme.danger },
+              (sending || voice.state === 'transcribing') && styles.disabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Icon
+              name={voice.state === 'listening' ? 'stop.fill' : 'mic.fill'}
+              fallback={voice.state === 'listening' ? '■' : '🎤'}
+              size={20}
+              color={voice.state === 'listening' ? theme.onPrimary : theme.text}
+            />
+          </Pressable>
+
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="Ask about a food…"
+            placeholderTextColor={theme.textSecondary}
+            style={[
+              styles.input,
+              { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: theme.border },
+            ]}
+            editable={!sending}
+            onSubmitEditing={() => send(input)}
+            returnKeyType="send"
+            multiline
           />
 
-          {sending || voice.isBusy ? (
-            <ThemedView style={styles.statusRow}>
-              <ActivityIndicator />
-              <ThemedText type="small" themeColor="textSecondary">
-                {voice.state === 'listening'
-                  ? 'Listening… tap the mic when you’re done'
-                  : voice.state === 'transcribing'
-                    ? 'Transcribing…'
-                    : 'Checking…'}
-              </ThemedText>
-            </ThemedView>
-          ) : null}
-
-          {error ? (
-            <ThemedView style={styles.errorBox}>
-              <ThemedText type="small" style={styles.errorText}>
-                {error}
-              </ThemedText>
-            </ThemedView>
-          ) : null}
-
-          <ThemedView style={styles.inputRow}>
-            <Pressable
-              onPress={() => {
-                Speech.stop();
-                setError(null);
-                voice.toggle();
-              }}
-              disabled={sending || voice.state === 'transcribing'}
-              style={[
-                styles.micButton,
-                voice.state === 'listening' && styles.micButtonActive,
-                (sending || voice.state === 'transcribing') && styles.sendButtonDisabled,
-              ]}
-              accessibilityLabel={voice.state === 'listening' ? 'Stop recording' : 'Ask by voice'}
-            >
-              <ThemedText type="default">{voice.state === 'listening' ? '■' : '🎤'}</ThemedText>
-            </Pressable>
-            <TextInput
-              value={input}
-              onChangeText={setInput}
-              placeholder="Ask about a food…"
-              placeholderTextColor={theme.textSecondary}
-              style={[styles.input, { color: theme.text, backgroundColor: theme.backgroundElement }]}
-              editable={!sending}
-              onSubmitEditing={() => send(input)}
-              returnKeyType="send"
-              multiline
-            />
-            <Pressable
-              onPress={() => send(input)}
-              disabled={sending || input.trim().length === 0}
-              style={[
-                styles.sendButton,
-                (sending || input.trim().length === 0) && styles.sendButtonDisabled,
-              ]}
-            >
-              <ThemedText type="default" style={styles.sendButtonText}>
-                Send
-              </ThemedText>
-            </Pressable>
-          </ThemedView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </ThemedView>
+          <Pressable
+            onPress={() => send(input)}
+            disabled={sending || input.trim().length === 0}
+            accessibilityRole="button"
+            accessibilityLabel="Send question"
+            style={({ pressed }) => [
+              styles.sendButton,
+              { backgroundColor: theme.primary },
+              (sending || input.trim().length === 0) && styles.disabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Icon name="arrow.up" fallback="↑" size={20} color={theme.onPrimary} />
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: { flex: 1 },
   flex: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-  },
-  headerSpacer: { width: 44 },
-  listContent: { padding: Spacing.three, gap: Spacing.three },
-  empty: { gap: Spacing.two, paddingVertical: Spacing.five },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.three,
-    paddingHorizontal: Spacing.four,
-  },
   centeredText: { textAlign: 'center' },
-  setupTitle: { fontSize: 24, textAlign: 'center' },
-  suggestion: {
-    borderWidth: 1,
-    borderColor: '#B0B4BA',
-    borderRadius: Spacing.three,
+  listContent: { padding: Spacing.three, gap: Spacing.three },
+  empty: { gap: Spacing.three, paddingVertical: Spacing.five },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, justifyContent: 'center' },
+  chip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.pill,
     paddingVertical: Spacing.two,
     paddingHorizontal: Spacing.three,
   },
+  tip: { marginBottom: Spacing.three },
+  tipDismiss: { alignSelf: 'flex-start', paddingTop: Spacing.one },
   bubble: {
-    borderRadius: Spacing.three,
+    borderRadius: Radius.lg,
     padding: Spacing.three,
     maxWidth: '92%',
   },
-  userBubble: { alignSelf: 'flex-end', backgroundColor: '#208AEF' },
-  userText: { color: '#FFFFFF' },
-  aiBubble: { alignSelf: 'flex-start', backgroundColor: 'transparent', paddingHorizontal: 0 },
+  userBubble: { alignSelf: 'flex-end' },
+  aiBubble: { alignSelf: 'flex-start', maxWidth: '96%' },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -308,42 +370,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.two,
   },
-  errorBox: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
-  errorText: { color: '#D93025' },
+  errorWrap: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
     paddingBottom: Spacing.two,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   input: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#B0B4BA',
-    borderRadius: Spacing.three,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.lg,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingVertical: Spacing.twoHalf,
     maxHeight: 120,
-    minHeight: 44,
+    minHeight: 48,
   },
-  sendButton: {
-    backgroundColor: '#208AEF',
-    borderRadius: Spacing.three,
-    paddingHorizontal: Spacing.four,
-    height: 44,
-    justifyContent: 'center',
-  },
-  sendButtonDisabled: { opacity: 0.5 },
-  sendButtonText: { color: '#FFFFFF' },
   micButton: {
-    width: 44,
-    height: 44,
-    borderRadius: Spacing.three,
-    borderWidth: 1,
-    borderColor: '#B0B4BA',
+    width: 48,
+    height: 48,
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  micButtonActive: { backgroundColor: '#D93025', borderColor: '#D93025' },
+  sendButton: {
+    width: 48,
+    height: 48,
+    borderRadius: Radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabled: { opacity: 0.4 },
+  pressed: { opacity: 0.7 },
 });

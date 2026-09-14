@@ -1,26 +1,39 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
 
 import { ProductCard } from '@/components/ProductCard';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { ErrorNotice } from '@/components/ui/ErrorNotice';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { Screen } from '@/components/ui/Screen';
 import { VerdictBadge } from '@/components/VerdictBadge';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 import { recordScan } from '@/hooks/useScanHistory';
+import { DIETARY_RULES } from '@/lib/dietaryRules';
 import { useAppState } from '@/lib/AppState';
 import { fetchProductByBarcode, OffRequestError } from '@/lib/openFoodFacts';
 import { evaluateProduct } from '@/lib/rulesEngine';
+import type { DietId } from '@/types/diet';
 import type { VerdictResult } from '@/types/verdict';
 
 // Distinct from "unknown" (product not found / insufficient data) — this
 // means the *request itself* failed, e.g. no signal in a grocery store.
 type LoadState = { kind: 'loading' } | { kind: 'network-error'; message: string } | { kind: 'ready' };
 
+/** "en:gluten" -> "Gluten", so the chips read like a label, not a database id. */
+function tagLabel(tag: string): string {
+  const bare = tag.replace(/^en:/, '').replace(/-/g, ' ');
+  return bare.charAt(0).toUpperCase() + bare.slice(1);
+}
+
 export default function Result() {
   const { barcode } = useLocalSearchParams<{ barcode: string }>();
   const { uid, profile } = useAppState();
+  const theme = useTheme();
 
   const [loadState, setLoadState] = useState<LoadState>({ kind: 'loading' });
   const [productName, setProductName] = useState<string | null>(null);
@@ -80,133 +93,103 @@ export default function Result() {
 
   if (loadState.kind === 'loading') {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.centered}>
-          <ActivityIndicator size="large" />
-          <ThemedText type="default" themeColor="textSecondary">
-            Looking up barcode {barcode}…
-          </ThemedText>
-        </SafeAreaView>
-      </ThemedView>
+      <Screen centered>
+        <LoadingState label="Checking this product…" />
+        {/* The digits are for reassurance/debugging, not the headline. */}
+        <ThemedText type="caption" themeColor="textSecondary">
+          Barcode {barcode}
+        </ThemedText>
+      </Screen>
     );
   }
 
   if (loadState.kind === 'network-error') {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.centered}>
-          <ThemedText type="title" style={styles.errorTitle}>
-            Couldn&apos;t check this product
-          </ThemedText>
-          <ThemedText type="default" themeColor="textSecondary" style={styles.errorBody}>
-            {loadState.message}
-          </ThemedText>
-          <RetryAndScanAgainButtons barcode={barcode} />
-        </SafeAreaView>
-      </ThemedView>
+      <Screen centered>
+        <ThemedText type="title" style={styles.centered}>
+          Couldn&apos;t check this product
+        </ThemedText>
+        <ErrorNotice
+          message={loadState.message}
+          onRetry={() => router.replace({ pathname: '/result', params: { barcode } })}
+          retryLabel="Retry"
+        />
+        <Button label="Scan a different item" variant="ghost" onPress={() => router.replace('/scan')} />
+      </Screen>
     );
   }
 
   if (!verdict) return null;
 
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <VerdictBadge status={verdict.status} />
-          <ProductCard name={productName} brand={brand} imageUrl={imageUrl} />
-          <ThemedView type="backgroundElement" style={styles.reasonBox}>
-            <ThemedText type="default">{verdict.reason}</ThemedText>
-          </ThemedView>
-          {/* A barcode we can't verify is exactly when the label itself is
-              the better source — offer that instead of a dead end. */}
-          {verdict.status === 'unknown' ? (
-            <Pressable onPress={() => router.push('/label')} style={styles.primaryButton}>
-              <ThemedText type="default" style={styles.primaryButtonText}>
-                Scan the ingredient label instead
-              </ThemedText>
-            </Pressable>
-          ) : null}
-
-          <Pressable
-            onPress={() => router.replace('/scan')}
-            style={verdict.status === 'unknown' ? styles.secondaryButton : styles.primaryButton}
-          >
-            <ThemedText
-              type={verdict.status === 'unknown' ? 'linkPrimary' : 'default'}
-              style={verdict.status === 'unknown' ? undefined : styles.primaryButtonText}
-            >
-              Scan Another
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={() =>
-              router.push({
-                pathname: '/assistant',
-                params: productName ? { prefill: `Tell me about ${productName}` } : {},
-              })
-            }
-            style={styles.secondaryButton}
-          >
-            <ThemedText type="linkPrimary">Ask the assistant about this</ThemedText>
-          </Pressable>
-          <Pressable onPress={() => router.push('/history')} style={styles.secondaryButton}>
-            <ThemedText type="linkPrimary">View scan history</ThemedText>
-          </Pressable>
-        </ScrollView>
-      </SafeAreaView>
-    </ThemedView>
+  const triggeredDietLabels = verdict.triggeredDiets.map(
+    (id: DietId) => DIETARY_RULES[id]?.label ?? id,
   );
-}
 
-function RetryAndScanAgainButtons({ barcode }: { barcode: string }) {
   return (
-    <ThemedView style={styles.buttonRow}>
-      <Pressable
-        onPress={() => router.replace({ pathname: '/result', params: { barcode } })}
-        style={styles.primaryButton}
-      >
-        <ThemedText type="default" style={styles.primaryButtonText}>
-          Retry
-        </ThemedText>
-      </Pressable>
-      <Pressable onPress={() => router.replace('/scan')} style={styles.secondaryButton}>
-        <ThemedText type="linkPrimary">Scan a different item</ThemedText>
-      </Pressable>
-    </ThemedView>
+    <Screen scroll>
+      <VerdictBadge status={verdict.status} />
+      <ProductCard name={productName} brand={brand} imageUrl={imageUrl} />
+
+      <Card>
+        <ThemedText type="default">{verdict.reason}</ThemedText>
+
+        {/* Already computed for every scan, but never shown until now. */}
+        {verdict.triggeredTags.length > 0 ? (
+          <View style={styles.chipRow}>
+            {verdict.triggeredTags.map((tag: string) => (
+              <View
+                key={tag}
+                style={[styles.chip, { backgroundColor: theme.background, borderColor: theme.border }]}
+              >
+                <ThemedText type="caption">{tagLabel(tag)}</ThemedText>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {triggeredDietLabels.length > 0 ? (
+          <ThemedText type="caption" themeColor="textSecondary">
+            Flagged for: {triggeredDietLabels.join(', ')}
+          </ThemedText>
+        ) : null}
+      </Card>
+
+      {/* A barcode we can't verify is exactly when the label itself is the
+          better source — offer that instead of a dead end. */}
+      {verdict.status === 'unknown' ? (
+        <Button label="Scan the ingredient label instead" onPress={() => router.push('/label')} />
+      ) : (
+        <Button label="Scan another" onPress={() => router.replace('/scan')} />
+      )}
+
+      <View style={styles.secondaryActions}>
+        {verdict.status === 'unknown' ? (
+          <Button label="Scan another" variant="ghost" onPress={() => router.replace('/scan')} />
+        ) : null}
+        <Button
+          label="Ask the assistant about this"
+          variant="ghost"
+          onPress={() =>
+            router.push({
+              pathname: '/assistant',
+              params: productName ? { prefill: `Tell me about ${productName}` } : {},
+            })
+          }
+        />
+        <Button label="View scan history" variant="ghost" onPress={() => router.push('/history')} />
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safeArea: { flex: 1 },
-  scrollContent: {
-    padding: Spacing.four,
-    gap: Spacing.four,
+  centered: { textAlign: 'center' },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.one },
+  chip: {
+    borderRadius: Radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.twoHalf,
   },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.three,
-    paddingHorizontal: Spacing.four,
-  },
-  errorTitle: { fontSize: 24, textAlign: 'center' },
-  errorBody: { textAlign: 'center' },
-  reasonBox: {
-    borderRadius: Spacing.three,
-    padding: Spacing.three,
-  },
-  buttonRow: { gap: Spacing.three, alignItems: 'center' },
-  primaryButton: {
-    backgroundColor: '#208AEF',
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.three,
-    alignItems: 'center',
-  },
-  primaryButtonText: { color: '#FFFFFF' },
-  secondaryButton: {
-    alignItems: 'center',
-    paddingVertical: Spacing.two,
-  },
+  secondaryActions: { gap: Spacing.one },
 });

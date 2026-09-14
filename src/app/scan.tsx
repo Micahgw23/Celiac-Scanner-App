@@ -1,17 +1,22 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Haptics from 'expo-haptics';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useRef } from 'react';
-import { Linking, Pressable, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useCallback, useRef, useState } from 'react';
+import { Linking, Platform, Pressable, StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Button } from '@/components/ui/Button';
+import { CameraOverlay, OverlayButton } from '@/components/ui/CameraOverlay';
+import { Icon } from '@/components/ui/Icon';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { Screen } from '@/components/ui/Screen';
+import { Radius, Spacing } from '@/constants/theme';
 
 const BARCODE_TYPES = ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128'] as const;
 
 export default function Scan() {
   const [permission, requestPermission] = useCameraPermissions();
+  const [torchOn, setTorchOn] = useState(false);
   // onBarcodeScanned fires repeatedly while a code stays in frame — this
   // guard makes sure we only navigate once per code. Reset on focus (rather
   // than on mount) so coming back from the result screen — whether that
@@ -26,116 +31,93 @@ export default function Scan() {
   function handleBarcodeScanned({ data }: { data: string }) {
     if (hasScannedRef.current) return;
     hasScannedRef.current = true;
+    // Confirms the read without making the user look away from the shelf.
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    }
     router.push({ pathname: '/result', params: { barcode: data } });
   }
 
   if (!permission) {
-    // Permission status is still loading.
-    return <ThemedView style={styles.container} />;
+    return (
+      <Screen centered>
+        <LoadingState label="Starting the camera…" />
+      </Screen>
+    );
   }
 
   if (!permission.granted) {
     return (
-      <ThemedView style={styles.container}>
-        <SafeAreaView style={styles.centeredSafeArea}>
-          <ThemedText type="title" style={styles.permissionTitle}>
-            Camera access needed
-          </ThemedText>
-          <ThemedText type="default" themeColor="textSecondary" style={styles.permissionBody}>
-            We use the camera to scan a product&apos;s barcode. Nothing is recorded or shared
-            beyond looking up the product.
-          </ThemedText>
-          {permission.canAskAgain ? (
-            <Pressable onPress={requestPermission} style={styles.button}>
-              <ThemedText type="default" style={styles.buttonText}>
-                Grant camera access
-              </ThemedText>
-            </Pressable>
-          ) : (
-            <Pressable onPress={() => Linking.openSettings()} style={styles.button}>
-              <ThemedText type="default" style={styles.buttonText}>
-                Open Settings
-              </ThemedText>
-            </Pressable>
-          )}
-        </SafeAreaView>
-      </ThemedView>
+      <Screen centered>
+        <ThemedText type="title" style={styles.centered}>
+          Camera access needed
+        </ThemedText>
+        <ThemedText type="default" themeColor="textSecondary" style={styles.centered}>
+          We use the camera to scan a product&apos;s barcode. Nothing is recorded or shared beyond
+          looking up the product.
+        </ThemedText>
+        {permission.canAskAgain ? (
+          <Button label="Grant camera access" onPress={requestPermission} fullWidth={false} />
+        ) : (
+          <Button label="Open Settings" onPress={() => Linking.openSettings()} fullWidth={false} />
+        )}
+      </Screen>
     );
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <Screen padded={false} edges={[]}>
       <CameraView
         style={styles.camera}
         facing="back"
+        enableTorch={torchOn}
         barcodeScannerSettings={{ barcodeTypes: [...BARCODE_TYPES] }}
         onBarcodeScanned={handleBarcodeScanned}
       />
-      <SafeAreaView style={styles.overlay} pointerEvents="box-none">
-        <ThemedView type="backgroundElement" style={styles.hintBar}>
-          <ThemedText type="default">Point the camera at a barcode</ThemedText>
-        </ThemedView>
-        <ThemedView style={styles.actionRow}>
-          <Pressable onPress={() => router.push('/label')} style={styles.overlayButton}>
-            <ThemedText type="linkPrimary">Scan label</ThemedText>
+      <CameraOverlay
+        hint="Line the barcode up inside the frame"
+        showReticle
+        topRight={
+          <Pressable
+            onPress={() => setTorchOn((on) => !on)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: torchOn }}
+            accessibilityLabel={torchOn ? 'Turn flashlight off' : 'Turn flashlight on'}
+            style={({ pressed }) => [
+              styles.torch,
+              torchOn && styles.torchOn,
+              pressed && styles.torchPressed,
+            ]}
+          >
+            <Icon
+              name={torchOn ? 'bolt.fill' : 'bolt.slash.fill'}
+              fallback={torchOn ? '🔦' : '🔦'}
+              size={20}
+              color={torchOn ? '#000000' : '#FFFFFF'}
+            />
           </Pressable>
-          <Pressable onPress={() => router.push('/assistant')} style={styles.overlayButton}>
-            <ThemedText type="linkPrimary">Ask about a food</ThemedText>
-          </Pressable>
-          <Pressable onPress={() => router.push('/history')} style={styles.overlayButton}>
-            <ThemedText type="linkPrimary">Scan history</ThemedText>
-          </Pressable>
-        </ThemedView>
-      </SafeAreaView>
-    </ThemedView>
+        }
+      >
+        <OverlayButton label="Scan label" onPress={() => router.push('/label')} />
+        <OverlayButton label="Ask about a food" onPress={() => router.push('/assistant')} />
+        <OverlayButton label="History" onPress={() => router.push('/history')} />
+      </CameraOverlay>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
   camera: { flex: 1 },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'space-between',
-    padding: Spacing.three,
-  },
-  hintBar: {
-    alignSelf: 'center',
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.four,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: Spacing.two,
-    backgroundColor: 'transparent',
-  },
-  overlayButton: {
-    backgroundColor: '#00000099',
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.four,
-  },
-  centeredSafeArea: {
-    flex: 1,
+  centered: { textAlign: 'center' },
+  torch: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.pill,
+    backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.three,
-    paddingHorizontal: Spacing.four,
+    marginTop: Spacing.half,
   },
-  permissionTitle: { fontSize: 24, textAlign: 'center' },
-  permissionBody: { textAlign: 'center' },
-  button: {
-    backgroundColor: '#208AEF',
-    borderRadius: Spacing.three,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.five,
-  },
-  buttonText: { color: '#FFFFFF' },
+  torchOn: { backgroundColor: '#FFFFFF' },
+  torchPressed: { opacity: 0.7 },
 });

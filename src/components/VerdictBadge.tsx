@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing, VerdictColors } from '@/constants/theme';
+import { Radius, Spacing, VerdictColors } from '@/constants/theme';
 import type { VerdictStatus } from '@/types/verdict';
 
 const LABELS: Record<VerdictStatus, string> = {
@@ -41,18 +41,20 @@ export function VerdictBadge({ status, compact = false }: VerdictBadgeProps) {
 
 const styles = StyleSheet.create({
   badge: {
-    borderRadius: Spacing.four,
+    borderRadius: Radius.xl,
     paddingVertical: Spacing.four,
     paddingHorizontal: Spacing.five,
     alignItems: 'center',
     alignSelf: 'stretch',
   },
   text: {
-    fontSize: 32,
-    lineHeight: 38,
+    // Large enough to read at arm's length in a store aisle.
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '700',
   },
   compactBadge: {
-    borderRadius: Spacing.two,
+    borderRadius: Radius.sm,
     paddingVertical: Spacing.half,
     paddingHorizontal: Spacing.two,
     alignSelf: 'flex-start',
