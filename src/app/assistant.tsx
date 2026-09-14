@@ -63,11 +63,14 @@ export default function Assistant() {
   }, []);
 
   // Adopt saved history once, and only if the user hasn't started typing into
-  // a fresh conversation — never clobber an in-flight exchange.
-  if (!hydratedRef.current && initialMessages && initialMessages.length > 0 && messages.length === 0) {
+  // a fresh conversation — never clobber an in-flight exchange. This lives in
+  // an effect because history arrives asynchronously from Firestore, and the
+  // ref keeps it a one-time adoption even if that query re-emits.
+  useEffect(() => {
+    if (hydratedRef.current || !initialMessages || initialMessages.length === 0) return;
     hydratedRef.current = true;
-    setMessages(initialMessages);
-  }
+    setMessages((current) => (current.length === 0 ? initialMessages : current));
+  }, [initialMessages]);
 
   async function send(text: string) {
     const question = text.trim();

@@ -63,7 +63,11 @@ export function useVoiceInput({ onTranscript, onError }: UseVoiceInputOptions) {
     }
   }, [clearTimer, onError, onTranscript, recorder]);
 
-  stopRef.current = stop;
+  // Assigned in an effect rather than during render: refs must not be written
+  // while rendering.
+  useEffect(() => {
+    stopRef.current = stop;
+  }, [stop]);
 
   const start = useCallback(async () => {
     try {
