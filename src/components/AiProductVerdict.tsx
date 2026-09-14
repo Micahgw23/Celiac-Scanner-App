@@ -1,7 +1,7 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+import { Card } from '@/components/ui/Card';
 import { VerdictBadge } from '@/components/VerdictBadge';
 import { Spacing } from '@/constants/theme';
 import { verdictForExtractedProduct } from '@/lib/aiExtraction';
@@ -25,14 +25,14 @@ export function AiProductVerdict({ product, conditions }: AiProductVerdictProps)
   const title = product.productName ?? 'Unnamed product';
 
   return (
-    <ThemedView type="backgroundElement" style={styles.card}>
-      <ThemedView style={styles.header}>
+    <Card style={styles.card}>
+      <View style={styles.header}>
         <ThemedText type="smallBold" numberOfLines={2} style={styles.title}>
           {title}
           {product.brand ? ` — ${product.brand}` : ''}
         </ThemedText>
         <VerdictBadge status={verdict.status} compact />
-      </ThemedView>
+      </View>
 
       <ThemedText type="small" themeColor="textSecondary">
         {verdict.reason}
@@ -49,17 +49,12 @@ export function AiProductVerdict({ product, conditions }: AiProductVerdictProps)
           ⚠︎ Read from your photo by AI. Compare it against the package before eating.
         </ThemedText>
       ) : null}
-    </ThemedView>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: Spacing.three,
-    padding: Spacing.three,
-    gap: Spacing.two,
-    marginTop: Spacing.two,
-  },
+  card: { marginTop: Spacing.two },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
